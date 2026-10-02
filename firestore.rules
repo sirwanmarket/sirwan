@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function ownerDoc() { return /databases/$(database)/documents/meta/owner; }
+    function isOwner() { return signedIn() && exists(ownerDoc()) && get(ownerDoc()).data.uid == request.auth.uid; }
+    function allowed() { return isOwner() || (signedIn() && exists(/databases/$(database)/documents/allow/$(request.auth.token.email))); }
+
+    match /meta/owner {
+      allow read: if true;
+      allow create: if signedIn() && !exists(ownerDoc()) && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /allow/{email} {
+      allow read: if signedIn() && (isOwner() || request.auth.token.email == email);
+      allow write: if isOwner();
+    }
+    match /settings/{d} { allow read: if allowed(); allow write: if isOwner(); }
+    match /groups/{d}   { allow read: if allowed(); allow write: if isOwner(); }
+    match /bk/{d}       { allow read, write: if isOwner(); }
+    match /bkp/{d}      { allow read, write: if isOwner(); }
+    match /staff/{uid}  { allow read: if allowed(); allow write: if isOwner() || (allowed() && request.auth.uid == uid); }
+    match /{col}/{d} {
+      allow read, write: if allowed() && !(col in ['meta','allow','settings','groups','bk','bkp','staff']);
+    }
+  }
+}
